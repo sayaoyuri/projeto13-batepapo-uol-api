@@ -80,6 +80,28 @@ app.post('/messages', async (req, res) => {
     .catch(() => res.sendStatus(500));
 })
 
+app.post('/status', async (req, res) => {
+  const schema = Joi.object({ user: Joi.string().required() })
+  const { user } = req.headers;
+
+  const { error } = schema.validate({ user });
+  if(error) return res.sendStatus(404);
+
+  try {
+    const ret = await db.collection('participants').findOne({ name: user });
+    if(!ret) return res.sendStatus(404);
+  } catch(e) {
+    return res.sendStatus(500);
+  }
+
+  try {
+    const ret = await db.collection('participants').updateOne({ name: user }, { $set: { lastStatus: Date.now() } });
+    if(ret) return res.sendStatus(200);
+  } catch(e) {
+    res.sendStatus(500);
+  }
+})
+
 app.get('/participants', async (req, res) => {
   try {
     const participants = await db.collection('participants').find().toArray();
