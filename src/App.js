@@ -37,5 +37,24 @@ app.post('/participants', (req, res) => {
   res.sendStatus(201);
 })
 
+app.post('/messages', (req, res) => {
+  const { to, text, type } = req.body;
+  const from = req.headers.user;
+
+  const schema = Joi.object({
+    from: Joi.string().required(),
+    to: Joi.string().required(),
+    text: Joi.string().required(),
+    type: Joi.string().allow('message', 'private_message').only().required()
+  })
+
+  const { error } = schema.validate({ from, to, text, type });
+  if(error || !participants.map(user => user.name).includes(from)) return res.sendStatus(422);
+
+  messages.push( { from, to, text, type, time: dayjs(Date.now()).format('HH:mm:ss') } );
+
+  res.sendStatus(201);
+})
+
 const PORT = 5000;
 app.listen(PORT, () => console.log(`Server is running on http:/localhost:${PORT}/`));
