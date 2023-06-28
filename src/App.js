@@ -2,42 +2,56 @@ import express from 'express';
 import cors from 'cors';
 import Joi from 'joi';
 import dayjs from 'dayjs';
-
-import { messages, participants } from './mockData.js';
+import dotenv from 'dotenv';
+import { MongoClient } from 'mongodb';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+dotenv.config();
 
-app.post('/participants', (req, res) => {
-  const schema = Joi.object({ name: Joi.string().alphanum().required() });
+const mongoClient = new MongoClient(process.env.DATABASE_URL);
+let db;
+
+mongoClient.connect()
+  .then(() => db = mongoClient.db())
+  .catch((e) => console.log(e.message));
+
+app.post('/participants', async (req, res) => {
+  const schema = Joi.object({ name: Joi.string().required() });
   const { name } = req.body;
   
   const { error } = schema.validate( { name } );
   if(error) return res.sendStatus(422);
-  
-  if(participants.map(user => user.name).includes(name)) return res.sendStatus(409);
+
+  try {
+    const checkName = await db.collection('participants').findOne({ name: name });
+    if(checkName) return res.sendStatus(409); 
+  } catch(e) {
+    return res.sendStatus(500);
+  }
 
   const time = Date.now();
+  const participantObj = { name, lastStatus: time };
   
-  participants.push({ name, lastStatus: time });
-  messages.push(
-    { 
-      from: name,
-      to: 'Todos',
-      text: 'entra na sala...',
-      type: 'status',
-      time: dayjs(time).format("HH:mm:ss")
-    }
-  );
+  db.collection('participants').insertOne(participantObj)
+    .catch(() => { return res.sendStatus(500) });
 
-  console.log(participants);
-  
-  res.sendStatus(201);
+  const messageObj = {
+    from: name,
+    to: 'Todos',
+    text: 'entra na sala...',
+    type: 'status',
+    time: dayjs(time).format("HH:mm:ss")
+  }
+
+  db.collection('messages').insertOne(messageObj)
+    .then(() => res.sendStatus(201))
+    .catch(() => res.sendStatus(500));
 })
 
-app.post('/messages', (req, res) => {
+app.post('/messages', async (req, res) => {
   const { to, text, type } = req.body;
   const from = req.headers.user;
 
@@ -49,11 +63,21 @@ app.post('/messages', (req, res) => {
   })
 
   const { error } = schema.validate({ from, to, text, type });
-  if(error || !participants.map(user => user.name).includes(from)) return res.sendStatus(422);
+  let checkFrom;
 
-  messages.push( { from, to, text, type, time: dayjs(Date.now()).format('HH:mm:ss') } );
+  try {
+    checkFrom = await db.collection('participants').findOne({ name: from })
+  } catch(e) {
+    return res.sendStatus(500);
+  }
 
-  res.sendStatus(201);
+  if(error || !checkFrom) return res.sendStatus(422);
+
+  const messageObj = { from, to, text, type, time: dayjs(Date.now()).format('HH:mm:ss') };
+
+  db.collection('messages').insertOne(messageObj)
+    .then(() => res.sendStatus(201))
+    .catch(() => res.sendStatus(500));
 })
 
 const PORT = 5000;
