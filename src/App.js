@@ -81,12 +81,30 @@ app.post('/messages', async (req, res) => {
 })
 
 app.get('/participants', async (req, res) => {
-  let ret = [];
-
   try {
-    ret = await db.collection('participants').find().toArray();
-    res.send(ret);
+    const participants = await db.collection('participants').find().toArray();
+    res.send(participants);
   } catch(e) {
+    res.sendStatus(500);
+  }
+})
+
+app.get('/messages', async (req, res) => {
+  const schema = Joi.object({ from: Joi.string().required(), limit: Joi.number().greater(0) })
+  const from = req.headers.user;
+  let { limit } = req.query;
+
+  const { error } = schema.validate({ from, limit });
+  if(error) return res.sendStatus(422);
+  
+  try {
+    if(!limit) limit = 0;
+    const constraints = [{ to: 'Todos' }, { from: from }, { to: from } ];
+
+    const messages = await db.collection('messages').find({ $or: constraints }).sort({ _id: -1 }).limit(parseInt(limit)).toArray();
+    res.send(messages);
+  } catch (e) {
+    console.log(e.message);
     res.sendStatus(500);
   }
 })
