@@ -80,5 +80,16 @@ app.post('/messages', async (req, res) => {
     .catch(() => res.sendStatus(500));
 })
 
+app.get('/participants', async (req, res) => {
+  let ret = [];
+
+  try {
+    ret = await db.collection('participants').find().toArray();
+    res.send(ret);
+  } catch(e) {
+    res.sendStatus(500);
+  }
+})
+
 const PORT = 5000;
 app.listen(PORT, () => console.log(`Server is running on http:/localhost:${PORT}/`));
