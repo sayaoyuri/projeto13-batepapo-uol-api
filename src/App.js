@@ -3,7 +3,7 @@ import cors from 'cors';
 import Joi from 'joi';
 import dayjs from 'dayjs';
 import dotenv from 'dotenv';
-import { MongoClient } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 import { stripHtml } from "string-strip-html";
 
 const app = express();
@@ -166,6 +166,33 @@ app.get('/messages', async (req, res) => {
   } catch (e) {
     console.log(e.message);
     res.sendStatus(500);
+  }
+});
+
+app.delete('/messages/:ID_DA_MENSAGEM', async (req, res) => {
+  const schema = Joi.object({ user: Joi.string().required(), id: Joi.string().required() });
+
+  let id, user;
+  try {
+    id  = stripHtml(req.params.ID_DA_MENSAGEM).result.trim();
+    console.log(id)
+    user = stripHtml(req.headers.user).result.trim();
+  } catch(e) {
+    return res.sendStatus(422);
+  }
+
+  const { error } = schema.validate({ user, id });
+  if(error) return res.sendStatus(422);
+
+  try{
+    const message = await db.collection('messages').findOne({ _id: new ObjectId(id) });
+    if(!message) return res.sendStatus(404);
+    if(message.from !== user) return res.sendStatus(401);
+
+    db.collection('messages').deleteOne({ _id: new ObjectId(id) });
+    return res.send();
+  } catch(e) {
+    return res.sendStatus(500);
   }
 })
 
