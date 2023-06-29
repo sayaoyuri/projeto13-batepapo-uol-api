@@ -46,7 +46,12 @@ setInterval( async () => {
 
 app.post('/participants', async (req, res) => {
   const schema = Joi.object({ name: Joi.string().required() });
-  const name = stripHtml(req.body.name).result.trim();
+  let name;
+  try {
+    name = stripHtml(req.body.name).result.trim();
+  } catch(e) {
+    return res.sendStatus(422);
+  }
   
   const { error } = schema.validate( { name } );
   if(error) return res.sendStatus(422);
@@ -85,21 +90,26 @@ app.post('/messages', async (req, res) => {
     type: Joi.string().allow('message', 'private_message').only().required()
   })
 
-  const from = stripHtml(req.headers.user).result.trim();
-  const to = stripHtml(req.body.to).result.trim();
-  const text = stripHtml(req.body.text).result.trim();
-  const type = stripHtml(req.body.type).result.trim();
+  let from, to, text, type;
+  try {
+    from = stripHtml(req.headers.user).result.trim();
+    to = stripHtml(req.body.to).result.trim();
+    text = stripHtml(req.body.text).result.trim();
+    type = stripHtml(req.body.type).result.trim();
+  } catch(e) {
+    return res.sendStatus(422);
+  }
 
   const { error } = schema.validate({ from, to, text, type });
-  let checkFrom;
+  if(error) return res.sendStatus(422);
 
+  let checkFrom;
   try {
     checkFrom = await db.collection('participants').findOne({ name: from })
+    if(!checkFrom) return res.sendStatus(422);
   } catch(e) {
     return res.sendStatus(500);
   }
-
-  if(error || !checkFrom) return res.sendStatus(422);
 
   const messageObj = { from, to, text, type, time: dayjs(Date.now()).format('HH:mm:ss') };
 
