@@ -4,6 +4,7 @@ import Joi from 'joi';
 import dayjs from 'dayjs';
 import dotenv from 'dotenv';
 import { MongoClient } from 'mongodb';
+import { stripHtml } from "string-strip-html";
 
 const app = express();
 app.use(cors());
@@ -45,7 +46,7 @@ setInterval( async () => {
 
 app.post('/participants', async (req, res) => {
   const schema = Joi.object({ name: Joi.string().required() });
-  const { name } = req.body;
+  const name = stripHtml(req.body.name).result.trim();
   
   const { error } = schema.validate( { name } );
   if(error) return res.sendStatus(422);
@@ -77,15 +78,17 @@ app.post('/participants', async (req, res) => {
 })
 
 app.post('/messages', async (req, res) => {
-  const { to, text, type } = req.body;
-  const from = req.headers.user;
-
   const schema = Joi.object({
     from: Joi.string().required(),
     to: Joi.string().required(),
     text: Joi.string().required(),
     type: Joi.string().allow('message', 'private_message').only().required()
   })
+
+  const from = stripHtml(req.headers.user).result.trim();
+  const to = stripHtml(req.body.to).result.trim();
+  const text = stripHtml(req.body.text).result.trim();
+  const type = stripHtml(req.body.type).result.trim();
 
   const { error } = schema.validate({ from, to, text, type });
   let checkFrom;
