@@ -18,6 +18,31 @@ mongoClient.connect()
   .then(() => db = mongoClient.db())
   .catch((e) => console.log(e.message));
 
+setInterval( async () => {
+  const time = (Date.now() - 10000);
+
+  try {
+    const inactiveUsers = await db.collection('participants').find({ lastStatus: { $lt: time } }).toArray();
+    let del;
+
+    if(inactiveUsers) del = await db.collection('participants').deleteMany({ lastStatus: { $lt: time} });
+    if(del) {
+      inactiveUsers.forEach( async user => {
+        const messageObj = { 
+          from: user.name,
+          to: 'Todos',
+          text: 'sai da sala...',
+          type: 'status',
+          time: dayjs(time).format('HH:mm:ss')
+        };
+        await db.collection('messages').insertOne(messageObj);
+      })
+    }
+  } catch (e) {
+    console.log(e.message);
+  }
+}, 10000)
+
 app.post('/participants', async (req, res) => {
   const schema = Joi.object({ name: Joi.string().required() });
   const { name } = req.body;
