@@ -196,5 +196,44 @@ app.delete('/messages/:ID_DA_MENSAGEM', async (req, res) => {
   }
 })
 
+app.put('/messages/:ID_DA_MENSAGEM', async (req, res) => {
+  const requestData = {};
+  try{
+    requestData.from = stripHtml(req.headers.user).result.trim();
+    requestData.to = stripHtml(req.body.to).result.trim();
+    requestData.text = stripHtml(req.body.text).result.trim();
+    requestData.type = stripHtml(req.body.type).result.trim();
+    requestData.msgId = stripHtml(req.params.ID_DA_MENSAGEM).result.trim();
+  } catch(e) {
+    return res.sendStatus(422);
+  }
+
+  const schema = Joi.object({
+    from: Joi.string().required(),
+    to: Joi.string().required(),
+    text: Joi.string().required(),
+    type: Joi.string().allow('message', 'private_message').only().required(),
+    msgId: Joi.string().min(24).max(24).required()
+  })
+
+  const { error } = schema.validate(requestData);
+  const activeUser = await db.collection('participants').findOne({ name: requestData.from });
+  if(error || !activeUser) return res.sendStatus(422);
+
+  const msg = await db.collection('messages').findOne({ _id: new ObjectId(requestData.msgId) });
+  if(!msg) return res.sendStatus(404);
+  if(msg.from !== requestData.from) return res.sendStatus(401);
+
+  try {
+    const result = await db.collection('messages').updateOne(
+      { _id: new ObjectId(requestData.msgId) },
+       { $set: { to: requestData.to, text: requestData.text, type: requestData.type }}
+    );
+    if(result.modifiedCount === 1) return res.send();
+  } catch(e) {
+    return res.sendStatus(500);
+  }
+})
+
 const PORT = 5000;
 app.listen(PORT, () => console.log(`Server is running on http:/localhost:${PORT}/`));
