@@ -27,7 +27,7 @@ setInterval( async () => {
     let del;
 
     if(inactiveUsers) del = await db.collection('participants').deleteMany({ lastStatus: { $lt: time} });
-    if(del) {
+    if(del.deletedCount > 0) {
       inactiveUsers.forEach( async user => {
         const messageObj = { 
           from: user.name,
@@ -54,11 +54,11 @@ app.post('/participants', async (req, res) => {
   }
   
   const { error } = schema.validate( { name } );
-  if(error) return res.sendStatus(422);
+  if(error) return res.status(422).send(error.details);
 
   try {
-    const checkName = await db.collection('participants').findOne({ name: name });
-    if(checkName) return res.sendStatus(409); 
+    const activeUser = await db.collection('participants').findOne({ name: name });
+    if(activeUser) return res.sendStatus(409); 
   } catch(e) {
     return res.sendStatus(500);
   }
@@ -66,8 +66,7 @@ app.post('/participants', async (req, res) => {
   const time = Date.now();
   const participantObj = { name, lastStatus: time };
   
-  db.collection('participants').insertOne(participantObj)
-    .catch(() => { return res.sendStatus(500) });
+  await db.collection('participants').insertOne(participantObj).catch(() => { return res.sendStatus(500) });
 
   const messageObj = {
     from: name,
@@ -90,51 +89,56 @@ app.post('/messages', async (req, res) => {
     type: Joi.string().allow('message', 'private_message').only().required()
   })
 
-  let from, to, text, type;
+  const requestData = {};
   try {
-    from = stripHtml(req.headers.user).result.trim();
-    to = stripHtml(req.body.to).result.trim();
-    text = stripHtml(req.body.text).result.trim();
-    type = stripHtml(req.body.type).result.trim();
+    requestData.from = stripHtml(req.headers.user).result.trim();
+    requestData.to = stripHtml(req.body.to).result.trim();
+    requestData.text = stripHtml(req.body.text).result.trim();
+    requestData.type = stripHtml(req.body.type).result.trim();
   } catch(e) {
     return res.sendStatus(422);
   }
 
-  const { error } = schema.validate({ from, to, text, type });
-  if(error) return res.sendStatus(422);
+  const { error } = schema.validate(requestData, { abortEarly: false });
+  if(error) return res.status(422).send(error.details);
 
-  let checkFrom;
   try {
-    checkFrom = await db.collection('participants').findOne({ name: from })
-    if(!checkFrom) return res.sendStatus(422);
+    const activeUser = await db.collection('participants').findOne({ name: requestData.from })
+    if(!activeUser) return res.sendStatus(401);
   } catch(e) {
     return res.sendStatus(500);
   }
 
-  const messageObj = { from, to, text, type, time: dayjs(Date.now()).format('HH:mm:ss') };
+  requestData.time = dayjs(Date.now()).format('HH:mm:ss');
 
-  db.collection('messages').insertOne(messageObj)
+  db.collection('messages').insertOne(requestData)
     .then(() => res.sendStatus(201))
     .catch(() => res.sendStatus(500));
 })
 
 app.post('/status', async (req, res) => {
   const schema = Joi.object({ user: Joi.string().required() })
-  const { user } = req.headers;
+
+  let user;
+  try {
+    user = stripHtml(req.headers.user).result.trim();
+  } catch (e) {
+    return res.sendStatus(422);
+  }
 
   const { error } = schema.validate({ user });
   if(error) return res.sendStatus(404);
 
   try {
-    const ret = await db.collection('participants').findOne({ name: user });
-    if(!ret) return res.sendStatus(404);
+    const result = await db.collection('participants').findOne({ name: user });
+    if(!result) return res.sendStatus(404);
   } catch(e) {
     return res.sendStatus(500);
   }
 
   try {
-    const ret = await db.collection('participants').updateOne({ name: user }, { $set: { lastStatus: Date.now() } });
-    if(ret) return res.sendStatus(200);
+    const result = await db.collection('participants').updateOne({ name: user }, { $set: { lastStatus: Date.now() } });
+    if(result.modifiedCount === 1) return res.sendStatus(200);
   } catch(e) {
     res.sendStatus(500);
   }
@@ -154,8 +158,8 @@ app.get('/messages', async (req, res) => {
   const from = req.headers.user;
   let { limit } = req.query;
 
-  const { error } = schema.validate({ from, limit });
-  if(error) return res.sendStatus(422);
+  const { error } = schema.validate({ from, limit }, {abortEarly: false});
+  if(error) return res.status(422).send(error.details);
   
   try {
     if(!limit) limit = 0;
@@ -164,32 +168,30 @@ app.get('/messages', async (req, res) => {
     const messages = await db.collection('messages').find({ $or: constraints }).sort({ _id: -1 }).limit(parseInt(limit)).toArray();
     res.send(messages);
   } catch (e) {
-    console.log(e.message);
     res.sendStatus(500);
   }
 });
 
 app.delete('/messages/:ID_DA_MENSAGEM', async (req, res) => {
-  const schema = Joi.object({ user: Joi.string().required(), id: Joi.string().required() });
+  const schema = Joi.object({ user: Joi.string().required(), id: Joi.string().min(24).max(24).required() });
 
-  let id, user;
+  const requestData = {};
   try {
-    id  = stripHtml(req.params.ID_DA_MENSAGEM).result.trim();
-    console.log(id)
-    user = stripHtml(req.headers.user).result.trim();
+    requestData.id  = stripHtml(req.params.ID_DA_MENSAGEM).result.trim();
+    requestData.user = stripHtml(req.headers.user).result.trim();
   } catch(e) {
     return res.sendStatus(422);
   }
 
-  const { error } = schema.validate({ user, id });
-  if(error) return res.sendStatus(422);
+  const { error } = schema.validate(requestData, { abortEarly: false });
+  if(error) return res.status(422).send(error.details);
 
   try{
-    const message = await db.collection('messages').findOne({ _id: new ObjectId(id) });
-    if(!message) return res.sendStatus(404);
-    if(message.from !== user) return res.sendStatus(401);
+    const msg = await db.collection('messages').findOne({ _id: new ObjectId(requestData.id) });
+    if(!msg) return res.sendStatus(404);
+    if(msg.from !== requestData.user) return res.sendStatus(401);
 
-    db.collection('messages').deleteOne({ _id: new ObjectId(id) });
+    await db.collection('messages').deleteOne({ _id: new ObjectId(requestData.id) });
     return res.send();
   } catch(e) {
     return res.sendStatus(500);
@@ -216,9 +218,11 @@ app.put('/messages/:ID_DA_MENSAGEM', async (req, res) => {
     msgId: Joi.string().min(24).max(24).required()
   })
 
-  const { error } = schema.validate(requestData);
+  const { error } = schema.validate(requestData, {abortEarly : false});
+  if(error) return res.status(422).send(error.details);
+
   const activeUser = await db.collection('participants').findOne({ name: requestData.from });
-  if(error || !activeUser) return res.sendStatus(422);
+  if(!activeUser) return res.sendStatus(401);
 
   const msg = await db.collection('messages').findOne({ _id: new ObjectId(requestData.msgId) });
   if(!msg) return res.sendStatus(404);
@@ -227,7 +231,7 @@ app.put('/messages/:ID_DA_MENSAGEM', async (req, res) => {
   try {
     const result = await db.collection('messages').updateOne(
       { _id: new ObjectId(requestData.msgId) },
-       { $set: { to: requestData.to, text: requestData.text, type: requestData.type }}
+       { $set: { to: requestData.to, text: requestData.text, type: requestData.type } }
     );
     if(result.modifiedCount === 1) return res.send();
   } catch(e) {
