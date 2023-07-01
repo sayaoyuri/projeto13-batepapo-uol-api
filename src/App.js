@@ -5,23 +5,17 @@ import dayjs from 'dayjs';
 import dotenv from 'dotenv';
 import { MongoClient, ObjectId } from 'mongodb';
 import { stripHtml } from "string-strip-html";
-
 const app = express();
 app.use(cors());
 app.use(express.json());
-
 dotenv.config();
-
 const mongoClient = new MongoClient(process.env.DATABASE_URL);
 let db;
-
 mongoClient.connect()
   .then(() => db = mongoClient.db())
   .catch((e) => console.log(e.message));
-
 setInterval( async () => {
   const time = (Date.now() - 10000);
-
   try {
     const inactiveUsers = await db.collection('participants').find({ lastStatus: { $lt: time } }).toArray();
     let del;
@@ -42,7 +36,7 @@ setInterval( async () => {
   } catch (e) {
     console.log(e.message);
   }
-}, 10000)
+}, 10000);
 
 app.post('/participants', async (req, res) => {
   const schema = Joi.object({ name: Joi.string().required() });
@@ -52,9 +46,9 @@ app.post('/participants', async (req, res) => {
   } catch(e) {
     return res.sendStatus(422);
   }
-  
+
   const { error } = schema.validate( { name } );
-  if(error) return res.status(422).send(error.details);
+  if(error) return res.sendStatus(422);
 
   try {
     const activeUser = await db.collection('participants').findOne({ name: name });
@@ -65,7 +59,7 @@ app.post('/participants', async (req, res) => {
 
   const time = Date.now();
   const participantObj = { name, lastStatus: time };
-  
+
   await db.collection('participants').insertOne(participantObj).catch(() => { return res.sendStatus(500) });
 
   const messageObj = {
@@ -99,12 +93,12 @@ app.post('/messages', async (req, res) => {
     return res.sendStatus(422);
   }
 
-  const { error } = schema.validate(requestData, { abortEarly: false });
-  if(error) return res.status(422).send(error.details);
+  const { error } = schema.validate(requestData);
+  if(error) return res.sendStatus(422);
 
   try {
-    const activeUser = await db.collection('participants').findOne({ name: requestData.from })
-    if(!activeUser) return res.sendStatus(401);
+    const activeUser = await db.collection('participants').findOne({ name: requestData.from });
+    if(!activeUser) return res.sendStatus(422);
   } catch(e) {
     return res.sendStatus(500);
   }
@@ -118,7 +112,6 @@ app.post('/messages', async (req, res) => {
 
 app.post('/status', async (req, res) => {
   const schema = Joi.object({ user: Joi.string().required() })
-
   let user;
   try {
     user = stripHtml(req.headers.user).result.trim();
@@ -138,7 +131,7 @@ app.post('/status', async (req, res) => {
 
   try {
     const result = await db.collection('participants').updateOne({ name: user }, { $set: { lastStatus: Date.now() } });
-    if(result.modifiedCount === 1) return res.sendStatus(200);
+    if(result) return res.sendStatus(200);
   } catch(e) {
     res.sendStatus(500);
   }
@@ -158,16 +151,16 @@ app.get('/messages', async (req, res) => {
   const from = req.headers.user;
   let { limit } = req.query;
 
-  const { error } = schema.validate({ from, limit }, {abortEarly: false});
-  if(error) return res.status(422).send(error.details);
-  
+  const { error } = schema.validate({ from, limit });
+  if(error) return res.sendStatus(422);
+
   try {
     if(!limit) limit = 0;
     const constraints = [{ to: 'Todos' }, { from: from }, { to: from } ];
-
     const messages = await db.collection('messages').find({ $or: constraints }).sort({ _id: -1 }).limit(parseInt(limit)).toArray();
     res.send(messages);
   } catch (e) {
+    console.log(e.message);
     res.sendStatus(500);
   }
 });
@@ -183,15 +176,15 @@ app.delete('/messages/:ID_DA_MENSAGEM', async (req, res) => {
     return res.sendStatus(422);
   }
 
-  const { error } = schema.validate(requestData, { abortEarly: false });
-  if(error) return res.status(422).send(error.details);
+  const { error } = schema.validate(requestData);
+  if(error) return res.sendStatus(422);
 
   try{
     const msg = await db.collection('messages').findOne({ _id: new ObjectId(requestData.id) });
     if(!msg) return res.sendStatus(404);
     if(msg.from !== requestData.user) return res.sendStatus(401);
 
-    await db.collection('messages').deleteOne({ _id: new ObjectId(requestData.id) });
+   await db.collection('messages').deleteOne({ _id: new ObjectId(id) });
     return res.send();
   } catch(e) {
     return res.sendStatus(500);
@@ -209,7 +202,6 @@ app.put('/messages/:ID_DA_MENSAGEM', async (req, res) => {
   } catch(e) {
     return res.sendStatus(422);
   }
-
   const schema = Joi.object({
     from: Joi.string().required(),
     to: Joi.string().required(),
@@ -218,16 +210,13 @@ app.put('/messages/:ID_DA_MENSAGEM', async (req, res) => {
     msgId: Joi.string().min(24).max(24).required()
   })
 
-  const { error } = schema.validate(requestData, {abortEarly : false});
-  if(error) return res.status(422).send(error.details);
-
+  const { error } = schema.validate(requestData);
   const activeUser = await db.collection('participants').findOne({ name: requestData.from });
-  if(!activeUser) return res.sendStatus(401);
+  if(error || !activeUser) return res.sendStatus(422);
 
   const msg = await db.collection('messages').findOne({ _id: new ObjectId(requestData.msgId) });
   if(!msg) return res.sendStatus(404);
   if(msg.from !== requestData.from) return res.sendStatus(401);
-
   try {
     const result = await db.collection('messages').updateOne(
       { _id: new ObjectId(requestData.msgId) },
