@@ -184,7 +184,7 @@ app.delete('/messages/:ID_DA_MENSAGEM', async (req, res) => {
     if(!msg) return res.sendStatus(404);
     if(msg.from !== requestData.user) return res.sendStatus(401);
 
-   await db.collection('messages').deleteOne({ _id: new ObjectId(id) });
+   await db.collection('messages').deleteOne({ _id: new ObjectId(requestData.id) });
     return res.send();
   } catch(e) {
     return res.sendStatus(500);
